@@ -1,3 +1,6 @@
+import collections
+import re
+
 import pyedflib as edf
 
 import numpy as np
@@ -44,10 +47,10 @@ class EDFFileReader:
         self._exclusion_zones = []
 
         # The minimum duration for a valid interval (in seconds)
-        self._min_duration = 5
+        self._signal_duration = 5
 
         # The separation between two valid intervals (in seconds)
-        self._valid_intervals_separation =  15
+        self._signal_separation =  15
 
         # The minimum value under which the signal is not valid anymore
         self._threshold_min = -0.10
@@ -86,6 +89,35 @@ class EDFFileReader:
 
         self._exclusion_zones = exclusion_zones
 
+    def get_filtered_signal(self, fmin, fmax):
+        """Get the signal filtred using a pass-band filter.
+
+        Args:
+            fmin (double): the frequence min
+            fmax (double): the frequence max
+        """
+
+        freqs = np.fft.fftfreq(len(self._times),d=self._dt)
+
+        spectrum = np.fft.fft(self._signal)
+        spectrum[abs(freqs) < fmin] = 0
+        spectrum[abs(freqs) > fmax] = 0
+        filtered_signal = np.fft.ifft(spectrum)
+
+        return filtered_signal.real
+
+    @property
+    def frequencies(self):
+        """Return the frequencies.
+
+        Return:
+            numpy.array: the frequencies
+        """
+
+        frequencies = np.fft.fftfreq(len(self._times),d=self._dt)
+
+        return frequencies
+
     @property
     def metadata(self):
         """Return the formated header of the edf file.
@@ -102,18 +134,40 @@ class EDFFileReader:
         return '\n'.join([": ".join([k,v]) for k,v in header.items()])
 
     @property
-    def min_duration(self):
-        """Getter for _min_duration attribute.
+    def parameters(self):
+        """Return the parameters for searching for valid intervals.
+
+        Return:
+            dict: the parameters
         """
 
-        return self._min_duration
+        params = collections.OrderedDict()
+        params['threshold min'] = self._threshold_min
+        params['threshold max'] = self._threshold_max
+        params['signal duration'] = self._signal_duration
+        params['signal separation'] = self._signal_separation
+        params['exclusion zones'] = ','.join(['{}:{}'.format(start,end) for start,end in self._exclusion_zones])
 
-    @min_duration.setter
-    def min_duration(self, min_duration):
-        """Getter for _min_duration attribute.
+        return params
+
+    @parameters.setter
+    def parameters(self, params):
+        """Set the parameters for searching for valid intervals.
+
+        Args:
+            params (dict): the parameters
         """
 
-        self._min_duration = min_duration
+        try:
+            self._threshold_min = float(params.get('threshold min',-0.8))
+            self._threshold_max = float(params.get('threshold max',0.8))
+            self._signal_duration = float(params.get('signal duration',5))
+            self._signal_separation = float(params.get('signal separation',15))
+            exclusion_zones = params.get('exclusion zones','').strip()
+            self._exclusion_zones = re.findall(r'(\d+):(\d+)(?:,|$)',exclusion_zones)
+        except ValueError as e:
+            raise EDFFileReaderError from e
+
 
     @property
     def signal(self):
@@ -121,6 +175,41 @@ class EDFFileReader:
         """
 
         return self._signal
+
+    @property
+    def signal_duration(self):
+        """Getter for _signal_duration attribute.
+        """
+
+        return self._signal_duration
+
+    @signal_duration.setter
+    def signal_duration(self, signal_duration):
+        """Getter for _signal_duration attribute.
+        """
+
+        self._signal_duration = signal_duration
+
+    @property
+    def signal_separation(self):
+        """Getter for _signal_separation attribute.
+        """
+
+        return self._signal_separation
+
+    @signal_separation.setter
+    def signal_separation(self, signal_separation):
+        """Getter for _signal_separation attribute.
+        """
+
+        self._signal_separation = signal_separation
+
+    @property
+    def spectrum(self):
+        """Return the real part of the spectrum.
+        """
+
+        return np.fft.fft(self._signal).real
 
     @property
     def threshold_max(self):
@@ -196,7 +285,7 @@ class EDFFileReader:
                 continue
 
             duration = (end - start)*self._dt
-            if duration <= self._min_duration:
+            if duration <= self._signal_duration:
                 continue
 
             valid_intervals.append((start,end))
@@ -213,7 +302,7 @@ class EDFFileReader:
                 while comp1 < n_intervals:
                     next_interval = valid_intervals[comp1]
                     duration = (next_interval[0] - current_interval[1])*self._dt
-                    if duration >= self._valid_intervals_separation:
+                    if duration >= self._signal_separation:
                         temp.append(next_interval)
                         comp = comp1
                         break
@@ -232,20 +321,6 @@ class EDFFileReader:
 
         return self._valid_intervals
 
-    @property
-    def valid_intervals_separation(self):
-        """Getter for _valid_intervals_separation attribute.
-        """
-
-        return self._valid_intervals_separation
-
-    @valid_intervals_separation.setter
-    def valid_intervals_separation(self, valid_intervals_separation):
-        """Getter for _valid_intervals_separation attribute.
-        """
-
-        self._valid_intervals_separation = valid_intervals_separation
-
 if __name__ == '__main__':
     
     import sys
@@ -257,3 +332,5 @@ if __name__ == '__main__':
     reader.update_valid_intervals()
 
     print(reader.metadata)
+
+    print(reader.get_filtered_signal(2.0,6.0))

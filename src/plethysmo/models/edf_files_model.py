@@ -4,6 +4,10 @@ from PyQt5 import QtCore
 
 from plethysmo.kernel.edf_file_reader import EDFFileReader, EDFFileReaderError
 
+class EDFFilesListModelError(Exception):
+    """Error handler for exception related with EDFFilesListModel class.
+    """
+
 class EDFFilesListModel(QtCore.QAbstractListModel):
     """This class implements a model for a list of loaded EDF files which contain plethysmography data.
     """
@@ -28,12 +32,16 @@ class EDFFilesListModel(QtCore.QAbstractListModel):
             edf_filename (str): the name of the EDF file to add
         """
 
+        self.beginInsertRows(QtCore.QModelIndex(), self.rowCount(), self.rowCount())
+
         try:
             reader = EDFFileReader(edf_filename)
-        except EDFFileReaderError:
-            return
+        except EDFFileReaderError as e:
+            raise EDFFilesListModelError from e
         else:
             self._edf_files[edf_filename] = reader
+
+        self.endInsertRows()
 
     def data(self, index, role):
         """Return the data for given index and role.
