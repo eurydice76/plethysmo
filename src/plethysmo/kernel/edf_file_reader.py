@@ -87,6 +87,21 @@ class EDFFileReader:
         self._exclusion_zones = exclusion_zones
 
     @property
+    def metadata(self):
+        """Return the formated header of the edf file.
+        """
+
+        header = self._edf_file.getHeader()
+
+        if header['startdate']:
+            header['startdate'] = header['startdate'].strftime('%Y/%m/%d - %H:%M:%S')
+
+        if header['birthdate']:
+            header['birthdate'] = header['birthdate'].strftime('%Y/%m/%d - %H:%M:%S')
+
+        return '\n'.join([": ".join([k,v]) for k,v in header.items()])
+
+    @property
     def min_duration(self):
         """Getter for _min_duration attribute.
         """
@@ -241,4 +256,4 @@ if __name__ == '__main__':
 
     reader.update_valid_intervals()
 
-    print(reader.valid_intervals)
+    print(reader.metadata)
