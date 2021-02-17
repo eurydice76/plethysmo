@@ -60,9 +60,12 @@ class PlotWidget(QtWidgets.QWidget):
         if len(x) != len(y):
             return
 
-        self._axes.clear()
-
-        self._axes.plot(x, y)
+        # If these if already a plot instance, just update the plot
+        if hasattr(self, '_plot'):
+            self._plot.set_data(x,y)
+        else:
+            # See here for info https://stackoverflow.com/questions/16742765/matplotlib-2d-line-line-plot-comma-meaning
+            self._plot, = self._axes.plot(x, y)
 
         self._canvas.draw()
 

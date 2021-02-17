@@ -117,8 +117,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._excluded_zones_list = QtWidgets.QListView()
         self._add_excluded_zone_button = QtWidgets.QPushButton('Add excluded zone')
+        self._excluded_zones_list.installEventFilter(self)
 
         self._plot_widget = PlotWidget(self)
+        self._plot_widget.axes.set_xlabel('Time (s)')
 
         self._intervals_list = QtWidgets.QListView()
 
@@ -148,16 +150,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self.show()
 
     def eventFilter(self, watched, event):
-        """
+        """Filter the events.
         """
 
         if event.type() == QtCore.QEvent.KeyPress and event.key() == QtCore.Qt.Key_Delete:
-            if watched == self._rois_list:
-                current_index = self._rois_list.currentIndex()
-                rois_list_model = self._rois_list.model()
-                rois_list_model.remove_roi(current_index.row())
+            # Capture the Delete key press event for the roi _list
+            if watched in [self._rois_list, self._excluded_zones_list]:
+                current_index = watched.currentIndex()
+                model = watched.model()
+                model.remove_roi(current_index.row())
+            
+                return True
 
-        return False
+        return super(MainWindow,self).eventFilter(watched,event)
 
     def init_ui(self):
         """Initializes the ui.
@@ -439,4 +444,5 @@ class MainWindow(QtWidgets.QMainWindow):
         # Plot the zoomed data
         dialog = PlotDialog(zoomed_times, zoomed_signal, self)
         dialog.setWindowTitle('Signal at [{},{}] s'.format(zoomed_times[0],zoomed_times[-1]))
+        dialog.axes.set_xlabel('Time (s)')
         dialog.show()
