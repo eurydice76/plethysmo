@@ -6,17 +6,17 @@ from pylab import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT 
 
 
-class PlotWidget(QtWidgets.QWidget):
+class PlotDialog(QtWidgets.QDialog):
     """This class implements the widgets that stores a standard 1D plot.
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, x, y, parent=None):
 
-        super(PlotWidget, self).__init__(parent)
+        super(PlotDialog, self).__init__(parent)
 
         self.init_ui()
 
-        self._patch = None
+        self.update_plot(x,y)
 
     def build_layout(self):
         """Build the layout.
@@ -72,31 +72,3 @@ class PlotWidget(QtWidgets.QWidget):
         """
 
         return self._axes
-
-    def clear_patch(self):
-        """Remove the patch currently drawn if any.
-        """
-
-        if self._patch is not None:
-            self._patch.remove()
-            self._canvas.draw()
-            self._patch = None
-
-    def show_interval(self, x_start, y_start, width, height, color='red'):
-        """Show the interval as a red rectangle over the plot.
-        """
-
-        if self._patch is not None:
-            self._patch.remove()
-
-        self._patch = patches.Rectangle(xy=[x_start,y_start],
-                                        width=width,
-                                        height=height,
-                                        linewidth=1,
-                                        color=color,
-                                        fill=False,
-                                        zorder=200)
-
-        self._axes.add_patch(self._patch)
-
-        self._canvas.draw()

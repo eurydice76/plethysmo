@@ -1,8 +1,10 @@
-from PyQt5 import QtWidgets
+from PyQt5 import QtCore, QtWidgets
 
 class ParametersDialog(QtWidgets.QDialog):
     """This class implements a dialog for setting the valid parameters search parameters.
     """
+
+    settings_accepted = QtCore.pyqtSignal(dict)
 
     def __init__(self, parameters, parent):
         """Constructor
@@ -25,11 +27,8 @@ class ParametersDialog(QtWidgets.QDialog):
 
         form_layout = QtWidgets.QFormLayout()
 
-        form_layout.addRow(QtWidgets.QLabel('threshold min'),self._threshold_min)
-        form_layout.addRow(QtWidgets.QLabel('threshold max'),self._threshold_max)
         form_layout.addRow(QtWidgets.QLabel('signal duration (in s)'),self._signal_duration)
         form_layout.addRow(QtWidgets.QLabel('signal separation (in s)'),self._signal_separation)
-        form_layout.addRow(QtWidgets.QLabel('exclusion zones'),self._exclusion_zones)
 
         main_layout.addLayout(form_layout)
 
@@ -43,18 +42,6 @@ class ParametersDialog(QtWidgets.QDialog):
         """Build the widgets of the dialog.
         """
 
-        self._threshold_min = QtWidgets.QDoubleSpinBox()
-        self._threshold_min.setMinimum(-1)
-        self._threshold_min.setMaximum(1)
-        self._threshold_min.setValue(self._parameters.get('threshold min',-0.8))
-        self._threshold_min.setSingleStep(0.01)
-
-        self._threshold_max = QtWidgets.QDoubleSpinBox()
-        self._threshold_max.setMinimum(-1)
-        self._threshold_max.setMaximum(1)
-        self._threshold_max.setValue(self._parameters.get('threshold max',0.8))
-        self._threshold_max.setSingleStep(0.01)
-
         self._signal_duration = QtWidgets.QSpinBox()
         self._signal_duration.setMinimum(1)
         self._signal_duration.setMaximum(100000)
@@ -64,9 +51,6 @@ class ParametersDialog(QtWidgets.QDialog):
         self._signal_separation.setMinimum(1)
         self._signal_separation.setMaximum(100000)
         self._signal_separation.setValue(self._parameters.get('signal separation',15))
-
-        self._exclusion_zones = QtWidgets.QLineEdit()
-        self._exclusion_zones.setText(self._parameters.get('exclusion zones',''))
 
         self._button_box = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
         self._button_box.accepted.connect(self.accept)
@@ -80,17 +64,15 @@ class ParametersDialog(QtWidgets.QDialog):
 
         self._build_layout()
 
-    @property
-    def parameters(self):
-        """Returns the parameters stored in the dialog.
+    def accept(self):
+        """Event called when the user accepts the settings.
         """
 
-        params = {}
-        params['threshold min'] = self._threshold_min.value()
-        params['threshold max'] = self._threshold_max.value()
-        params['signal duration'] = self._signal_duration.value()
-        params['signal separation'] = self._signal_separation.value()
-        params['exclusion zones'] = self._exclusion_zones.text()
+        parameters = {}
+        parameters['signal duration'] = self._signal_duration.value()
+        parameters['signal separation'] = self._signal_separation.value()
 
-        return params
+        self.settings_accepted.emit(parameters)
+
+        super(ParametersDialog,self).accept()
 

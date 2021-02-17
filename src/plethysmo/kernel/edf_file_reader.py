@@ -43,23 +43,20 @@ class EDFFileReader:
         n_points = len(self._signal)
         self._times = np.arange(0,n_points*self._dt,self._dt)
 
-        # The time zone for which the data will not be parsed when searching for valid intervals
-        self._exclusion_zones = []
-
         # The minimum duration for a valid interval (in seconds)
-        self._signal_duration = 5
+        self._signal_duration = 5.0
 
         # The separation between two valid intervals (in seconds)
-        self._signal_separation =  15
-
-        # The minimum value under which the signal is not valid anymore
-        self._threshold_min = -0.10
-
-        # The maximum value over which the signal is not valid anymore
-        self._threshold_max =  0.10
+        self._signal_separation = 15.0
         
         # The list of valid intervals (tuples of of the form (start,end))
         self._valid_intervals = []
+
+        # The list of ROIs used to set up the intervals
+        self._rois = []
+
+        # The time zones for which the data will not be parsed when searching for valid intervals
+        self._excluded_zones = []
 
     @property
     def dt(self):
@@ -76,18 +73,18 @@ class EDFFileReader:
         return self._edf_filename
 
     @property
-    def exclusion_zones(self):
-        """Getter for _exclusion_zones attribute.
+    def excluded_zones(self):
+        """Getter for _excluded_zones attribute.
         """
 
-        return self._exclusion_zones
+        return self._excluded_zones
 
-    @exclusion_zones.setter
-    def exclusion_zones(self, exclusion_zones):
-        """Getter for _exclusion_zones attribute.
+    @excluded_zones.setter
+    def excluded_zones(self, excluded_zones):
+        """Getter for _excluded_zones attribute.
         """
 
-        self._exclusion_zones = exclusion_zones
+        self._excluded_zones = excluded_zones
 
     def get_filtered_signal(self, fmin, fmax):
         """Get the signal filtred using a pass-band filter.
@@ -142,11 +139,8 @@ class EDFFileReader:
         """
 
         params = collections.OrderedDict()
-        params['threshold min'] = self._threshold_min
-        params['threshold max'] = self._threshold_max
         params['signal duration'] = self._signal_duration
         params['signal separation'] = self._signal_separation
-        params['exclusion zones'] = ','.join(['{}:{}'.format(start,end) for start,end in self._exclusion_zones])
 
         return params
 
@@ -159,15 +153,23 @@ class EDFFileReader:
         """
 
         try:
-            self._threshold_min = float(params.get('threshold min',-0.8))
-            self._threshold_max = float(params.get('threshold max',0.8))
             self._signal_duration = float(params.get('signal duration',5))
             self._signal_separation = float(params.get('signal separation',15))
-            exclusion_zones = params.get('exclusion zones','').strip()
-            self._exclusion_zones = re.findall(r'(\d+):(\d+)(?:,|$)',exclusion_zones)
         except ValueError as e:
             raise EDFFileReaderError from e
 
+    def reset_valid_intervals(self):
+        """Reset the list of valid intervals.
+        """
+
+        self._valid_intervals = []
+
+    @property
+    def rois(self):
+        """Getter for _rois attribute.
+        """
+
+        return self._rois
 
     @property
     def signal(self):
@@ -212,34 +214,6 @@ class EDFFileReader:
         return np.fft.fft(self._signal).real
 
     @property
-    def threshold_max(self):
-        """Getter for _threshold_max attribute.
-        """
-
-        return self._threshold_max
-
-    @threshold_max.setter
-    def threshold_max(self, threshold_max):
-        """Getter for _threshold_max attribute.
-        """
-
-        self._threshold_max = threshold_max
-
-    @property
-    def threshold_min(self):
-        """Getter for _threshold_min attribute.
-        """
-
-        return self._threshold_min
-
-    @threshold_min.setter
-    def threshold_min(self, threshold_min):
-        """Getter for _threshold_min attribute.
-        """
-
-        self._threshold_min = threshold_min
-
-    @property
     def times(self):
         """Getter for _times attribute.
         """
@@ -250,48 +224,82 @@ class EDFFileReader:
         """Update the valid intervals.
         """
 
-        signal_length = len(self._signal)
-
-        comp = 0
-
         intervals = []
 
-        while comp < signal_length:
+        # Loop over the ROI ans search for valid intervals inside
+        for roi in self._rois:
 
-            s = self._signal[comp]
+            start_roi, threshold_min = roi.lower_corner
+            # The roi unit is converted from time to index
+            start_roi = int(start_roi/self._dt)
+            start_roi = max(start_roi,0)
 
-            if s >= self._threshold_min and s <= self._threshold_max:
-                start = comp
-                comp1 = start
-                while comp1 < signal_length:
-                    s1 = self._signal[comp1]
-                    if s1 < self._threshold_min or s1 > self._threshold_max:
-                        end = comp1
-                        intervals.append((start,end))
-                        break
-                    comp1 += 1
-                comp = comp1
-            else:
-                comp += 1
+            end_roi, threshold_max = roi.upper_corner
+            # The roi unit is converted from time to index
+            end_roi = int(end_roi/self._dt)
+            end_roi = min(end_roi,len(self._signal)-1)
 
+            # Start the search from the beginning of the ROI
+            comp = start_roi
+            
+            while comp < end_roi:
+
+                s = self._signal[comp]
+
+                # Case where the signal is between the threshold: start a second loop to find how many points are successively within between the threshold
+                if s >= threshold_min and s <= threshold_max:
+                    start = comp
+                    comp1 = start
+                    # Loop until the end of the ROI
+                    while comp1 < end_roi:
+                        s1 = self._signal[comp1]
+                        # Case where the signal is out of the thresholds: the interval is closed and checked that its length is over the signal duration parameter
+                        if s1 < threshold_min or s1 > threshold_max:
+                            end = comp1
+                            # Case where the signal is over the signal duration parameter: the interval is closed and kept
+                            if (end - start)*self._dt > self._signal_duration:
+                                intervals.append((start,end))
+                            break
+                        # Case where the signal is between the thresholds: checked that its length is over the signal duration parameter
+                        else:
+                            # If this is the case, the interval is closed and kept
+                            if (comp1 - start)*self._dt > self._signal_duration:
+                                end = comp1
+                                intervals.append((start,end))
+                                break
+
+                        comp1 += 1
+                    comp = comp1
+                else:
+                    comp += 1
+
+        # Loop over the interval found so far and check that none of them fall within an excluded zone. If this is the case, the interval is not kept.
         valid_intervals = []
         for start, end in intervals:
             excluded_interval = False
-            for start_excluded_zone, end_excluded_zone in self._exclusion_zones:
-                if (end >= start_excluded_zone and start <= end_excluded_zone):
+            for roi in self._excluded_zones:
+
+                start_roi, _ = roi.lower_corner
+                # The roi unit is converted from time to index
+                start_roi = int(start_roi/self._dt)
+                start_roi = max(start_roi,0)
+
+                end_roi, _ = roi.upper_corner
+                # The roi unit is converted from time to index
+                end_roi = int(end_roi/self._dt)
+                end_roi = min(end_roi,len(self._signal)-1)
+                
+                if (end >= start_roi and start <= end_roi):
                     excluded_interval = True
 
             if excluded_interval:
-                continue
-
-            duration = (end - start)*self._dt
-            if duration <= self._signal_duration:
                 continue
 
             valid_intervals.append((start,end))
 
         n_intervals = len(valid_intervals)
 
+        # Loop over the intervals found so far, and keep only those distant from more than the signal separation parameter
         if n_intervals >= 2:
 
             comp = 0
@@ -313,6 +321,8 @@ class EDFFileReader:
             valid_intervals = temp
 
         self._valid_intervals = valid_intervals
+
+        return self._valid_intervals
 
     @property
     def valid_intervals(self):
