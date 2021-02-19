@@ -99,6 +99,42 @@ class EDFFileReader:
 
         self._excluded_zones[name] = roi
 
+    def compute_statistics(self):
+        """Compute some statistics on this reader.
+        """
+
+        statistics = collections.OrderedDict()
+
+        for name, intervals in self._valid_intervals.items():
+
+            for start,end in intervals:
+
+                # Compute the integral
+                windowed_interval = self._signal[start:end]
+
+                # Remove the baseline from the windowed interval
+                spectrum = np.fft.fft(windowed_interval)
+                spectrum[0] = 0
+                windowed_interval = np.fft.ifft(spectrum).real
+
+                integral = np.sum(windowed_interval*self._dt)
+
+                # Compute the period using maximum of autocorrelation
+                # See here for info https://stackoverflow.com/questions/59265603/how-to-find-period-of-signal-autocorrelation-vs-fast-fourier-transform-vs-power
+                acf = np.correlate(windowed_interval, windowed_interval, 'full')[-len(windowed_interval):]
+                 # Find the second-order differences
+                inflection = np.diff(np.sign(np.diff(acf)))
+                # Find where they are negative --> maximum
+                peaks = (inflection < 0).nonzero()[0] + 1
+                if peaks.size == 0:
+                    period = np.nan
+                else:
+                    # Convert from index to time unit
+                    period = peaks[acf[peaks].argmax()]*self._dt
+
+
+
+
     def delete_excluded_zone(self, name):
         """Delete a ROI from the excluded zones container.
 

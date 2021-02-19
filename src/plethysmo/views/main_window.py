@@ -37,6 +37,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._intervals_list.doubleClicked.connect(self.on_show_zoomed_data)
         self._add_roi_button.clicked.connect(lambda : self.on_add_roi(self._rois_list))
         self._add_excluded_zone_button.clicked.connect(lambda : self.on_add_roi(self._excluded_zones_list))
+        self._compute_statistics.clicked.connect(self.on_compute_statistics)
 
     def build_layout(self):
         """Build the layout.
@@ -66,6 +67,8 @@ class MainWindow(QtWidgets.QMainWindow):
         middle_hlayout.addWidget(self._plot_widget, stretch=2)
 
         main_layout.addLayout(middle_hlayout, stretch=4)
+
+        main_layout.addWidget(self._compute_statistics)
 
         main_layout.addWidget(self._logger.widget, stretch=1)
 
@@ -120,19 +123,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self._add_excluded_zone_button = QtWidgets.QPushButton('Add excluded zone')
         self._excluded_zones_list.installEventFilter(self)
 
-        self._plot_widget = PlotWidget(self)
-        self._plot_widget.axes.set_xlabel('Time (s)')
+        self._search_valid_intervals_button = QtWidgets.QPushButton('Search valid intervals')
 
         self._intervals_list = QtWidgets.QListView()
         self._intervals_list.installEventFilter(self)
 
-        self._search_valid_intervals_button = QtWidgets.QPushButton('Search valid intervals')
+        self._plot_widget = PlotWidget(self)
+        self._plot_widget.axes.set_xlabel('Time (s)')
 
-        self.setCentralWidget(self._main_frame)
-
-        self.setGeometry(0, 0, 1200, 1100)
-
-        self.setWindowTitle("plethysmo {}".format(__version__))
+        self._compute_statistics = QtWidgets.QPushButton('Compute statistics')
 
         self._logger = LoggerWidget(self)
         self._logger.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
@@ -148,6 +147,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
         icon_path = os.path.join(plethysmo.__path__[0], "icons", "plethysmo.png")
         self.setWindowIcon(QtGui.QIcon(icon_path))
+
+        self.setCentralWidget(self._main_frame)
+
+        self.setGeometry(0, 0, 1200, 1100)
+
+        self.setWindowTitle("plethysmo {}".format(__version__))
 
         self.show()
 
@@ -208,6 +213,22 @@ class MainWindow(QtWidgets.QMainWindow):
             if model is not None:
                 model.add_roi(name, new_roi)
                 logging.info('Added ROI {} to {} file'.format(name,reader.filename))
+
+    def on_compute_statistics(self):
+        """Event called when the user clicks on Compute statistics button.
+        """
+
+        # Check that some EDF files have been loaded
+        edf_files_model = self._edf_files_list.model()
+        if edf_files_model.rowCount() == 0:
+            logging.info('No EDF file(s) loaded.')
+            return
+
+        all_readers = [edf_files_model.data(edf_files_model.index(i), role=EDFFilesListModel.Reader) for i in range(edf_files_model.rowCount())]
+
+        for reader in all_readers:
+            reader.compute_statistics()
+
 
     def on_load_data(self):
         """Event called when the user loads data from the main menu.
@@ -444,7 +465,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # The zoomed data
         zoomed_times = reader.times[interval[0]:interval[1]]
-        zoomed_signal = reader.signal[interval[0]:interval[1]]
+        zoomed_signal = reader.signal[interval[0]:interval[1]]  
 
         # Plot the zoomed data
         dialog = PlotDialog(zoomed_times, zoomed_signal, self)
