@@ -53,7 +53,7 @@ class IntervalsListModel(QtCore.QAbstractListModel):
         else:
             return QtCore.QVariant()
 
-    def remove_reader_from_index(self, index):
+    def remove_interval(self, index):
         """Remove an EDF file from its index
         """
 

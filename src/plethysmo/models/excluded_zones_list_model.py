@@ -1,10 +1,10 @@
 from PyQt5 import QtCore
 
-class ROISListModelError(Exception):
-    """Error handler for exception related with ROISListModel class.
+class ExcludedZonesListModelError(Exception):
+    """Error handler for exception related with ExcludedZonesListModel class.
     """
 
-class ROISListModel(QtCore.QAbstractListModel):
+class ExcludedZonesListModel(QtCore.QAbstractListModel):
     """This class implements a model for a list of Region Of Interest.
     """
 
@@ -20,7 +20,7 @@ class ROISListModel(QtCore.QAbstractListModel):
             parent (PyQt5.QtWidgets.QObject): the parent object
         """
 
-        super(ROISListModel, self).__init__(parent)
+        super(ExcludedZonesListModel, self).__init__(parent)
 
         self._reader = reader
 
@@ -34,7 +34,7 @@ class ROISListModel(QtCore.QAbstractListModel):
 
         self.beginInsertRows(QtCore.QModelIndex(), self.rowCount(), self.rowCount())
 
-        self._reader.add_roi(name, roi)
+        self._reader.add_excluded_zone(name, roi)
 
         self.endInsertRows()
 
@@ -54,13 +54,13 @@ class ROISListModel(QtCore.QAbstractListModel):
 
         row = index.row()
 
-        rois = self._reader.rois
+        excluded_zones = self._reader.excluded_zones
 
-        roi_names = list(rois.keys())
+        roi_names = list(excluded_zones.keys())
 
         selected_roi_name = roi_names[row]
 
-        selected_roi = rois[selected_roi_name]
+        selected_roi = excluded_zones[selected_roi_name]
 
         if role == QtCore.Qt.DisplayRole:
             return selected_roi_name
@@ -72,7 +72,7 @@ class ROISListModel(QtCore.QAbstractListModel):
 
             return 'from ({:f},{:f}) to ({:f}:{:f})'.format(lower_corner[0],lower_corner[1],upper_corner[0],upper_corner[1])
 
-        elif role == ROISListModel.SelectedROI:
+        elif role == ExcludedZonesListModel.SelectedROI:
             return selected_roi
 
         else:
@@ -84,7 +84,7 @@ class ROISListModel(QtCore.QAbstractListModel):
 
         self.beginRemoveRows(QtCore.QModelIndex(), index, index)
 
-        roi_names = list(self._reader.rois.keys())
+        roi_names = list(self._reader.excluded_zones.keys())
 
         selected_roi_name = roi_names[index]
 
@@ -100,4 +100,4 @@ class ROISListModel(QtCore.QAbstractListModel):
         """Returns the number of row of the model.
         """
 
-        return len(self._reader.rois)
+        return len(self._reader.excluded_zones)

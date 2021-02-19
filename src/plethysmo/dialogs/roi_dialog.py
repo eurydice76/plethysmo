@@ -119,7 +119,6 @@ class ROIDialog(QtWidgets.QDialog):
 
         super(ROIDialog,self).accept()
 
-
     @property
     def roi(self):
         """Build and return a ROI.
@@ -127,7 +126,7 @@ class ROIDialog(QtWidgets.QDialog):
 
         name = self._name.text().strip()
 
-        roi = ROI(name, self._lower_corner, self._upper_corner)
+        roi = ROI(self._lower_corner, self._upper_corner)
 
-        return roi
+        return name, roi
 

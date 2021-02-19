@@ -10,6 +10,7 @@ from plethysmo.dialogs.parameters_dialog import ParametersDialog
 from plethysmo.dialogs.plot_dialog import PlotDialog
 from plethysmo.dialogs.roi_dialog import ROIDialog
 from plethysmo.models.edf_files_list_model import EDFFilesListModel, EDFFilesListModelError
+from plethysmo.models.excluded_zones_list_model import ExcludedZonesListModel
 from plethysmo.models.intervals_list_model import IntervalsListModel
 from plethysmo.models.rois_list_model import ROISListModel
 from plethysmo.utils.progress_bar import progress_bar
@@ -35,7 +36,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._search_valid_intervals_button.clicked.connect(self.on_search_valid_intervals)
         self._intervals_list.doubleClicked.connect(self.on_show_zoomed_data)
         self._add_roi_button.clicked.connect(lambda : self.on_add_roi(self._rois_list))
-        self._add_excluded_zone_button.clicked.connect(lambda : self.on_add_excluded_zone(self._excluded_zones_list))
+        self._add_excluded_zone_button.clicked.connect(lambda : self.on_add_roi(self._excluded_zones_list))
 
     def build_layout(self):
         """Build the layout.
@@ -123,6 +124,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._plot_widget.axes.set_xlabel('Time (s)')
 
         self._intervals_list = QtWidgets.QListView()
+        self._intervals_list.installEventFilter(self)
 
         self._search_valid_intervals_button = QtWidgets.QPushButton('Search valid intervals')
 
@@ -159,7 +161,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 current_index = watched.currentIndex()
                 model = watched.model()
                 model.remove_roi(current_index.row())
-            
+                return True
+
+            elif watched == self._intervals_list:
+                current_index = watched.currentIndex()
+                model = watched.model()
+                model.remove_interval(current_index.row())            
                 return True
 
         return super(MainWindow,self).eventFilter(watched,event)
@@ -196,10 +203,11 @@ class MainWindow(QtWidgets.QMainWindow):
         # The ROI is accepted
         if dialog.exec_():
             # Fetch the ROI from the dialog instance and add to the ROI list model
-            new_roi = dialog.roi
+            name, new_roi = dialog.roi
             model = widget.model()
             if model is not None:
-                model.add_roi(new_roi)
+                model.add_roi(name, new_roi)
+                logging.info('Added ROI {} to {} file'.format(name,reader.filename))
 
     def on_load_data(self):
         """Event called when the user loads data from the main menu.
@@ -258,15 +266,16 @@ class MainWindow(QtWidgets.QMainWindow):
         current_index = self._edf_files_list.currentIndex()
         reader = edf_files_model.data(current_index,role=EDFFilesListModel.Reader)
 
+        logging.info('Searching intervals for {} filename ...'.format(reader.filename))
+
         # Search for valid intervals
-        valid_intervals = reader.update_valid_intervals()
+        reader.update_valid_intervals()
 
-        # Replace the current intervals list model by a new one
-        intervals_list_model = IntervalsListModel(valid_intervals, reader.dt, self)
-        self._intervals_list.setModel(intervals_list_model)
+        # If an ROI is already selected update the interval list accordingly
+        if self._rois_list.currentIndex().row() >= 0:
+            self.on_select_roi(self._rois_list.currentIndex())
 
-        # Create a signal/slot connexion for row changed event
-        self._intervals_list.selectionModel().currentChanged.connect(self.on_select_interval)
+        logging.info('... done')
 
     def on_select_edf_file(self, index):
         """Event fired when an EDF file is selected.
@@ -282,22 +291,22 @@ class MainWindow(QtWidgets.QMainWindow):
         # Plot the signal contained in the selected reader
         self._plot_widget.update_plot(reader.times, reader.signal)
 
-        # Replace the current intervals found with the one from the selected reader
-        intervals_list_model = IntervalsListModel(reader.valid_intervals, reader.dt, self)
-        self._intervals_list.setModel(intervals_list_model)
-        self._intervals_list.selectionModel().currentChanged.connect(self.on_select_interval)
-
         # Replace the current ROIs list model by the one from the selected reader.
-        rois_list_model = ROISListModel(reader.rois, self)
+        rois_list_model = ROISListModel(reader, self)
         self._rois_list.setModel(rois_list_model)
-        rois_list_model.no_roi.connect(lambda : self._plot_widget.clear_patch())
-        self._rois_list.selectionModel().currentChanged.connect(lambda index : self.on_select_roi(self._rois_list,index,'green'))
+        rois_list_model.noROI.connect(lambda : self._plot_widget.clear_patch())
+        self._rois_list.selectionModel().currentChanged.connect(self.on_select_roi)
 
         # Replace the current excluded zones list model by the one from the selected reader.
-        excluded_zones_list_model = ROISListModel(reader.excluded_zones, self)
+        excluded_zones_list_model = ExcludedZonesListModel(reader, self)
         self._excluded_zones_list.setModel(excluded_zones_list_model)
-        excluded_zones_list_model.no_roi.connect(lambda : self._plot_widget.clear_patch())
-        self._excluded_zones_list.selectionModel().currentChanged.connect(lambda index : self.on_select_roi(self._excluded_zones_list,index,'red'))
+        excluded_zones_list_model.noROI.connect(lambda : self._plot_widget.clear_patch())
+        self._excluded_zones_list.selectionModel().currentChanged.connect(self.on_select_excluded_zone)
+
+        # Replace the current intervals found with the one from the selected reader and roi
+        intervals_list_model = IntervalsListModel([], reader.dt, self)
+        self._intervals_list.setModel(intervals_list_model)
+        self._intervals_list.selectionModel().currentChanged.connect(self.on_select_interval)
 
     def on_select_interval(self, index):
         """Event fired when an interval is selected.
@@ -323,12 +332,12 @@ class MainWindow(QtWidgets.QMainWindow):
         width = end - start
         self._plot_widget.show_interval(start, -1.0, width, 2.0, 'blue')
 
-    def on_select_roi(self, widget, index, color):
+    def on_select_excluded_zone(self, index):
         """Event called when the user clicks on a ROI.
         """        
 
         # Get the selected ROI
-        model = widget.model()
+        model = self._excluded_zones_list.model()
         if model is None:
             return
 
@@ -345,7 +354,44 @@ class MainWindow(QtWidgets.QMainWindow):
                                         lower_corner[1],
                                         upper_corner[0] - lower_corner[0],
                                         upper_corner[1] - lower_corner[1],
-                                        color)
+                                        'red')
+
+    def on_select_roi(self, index):
+        """Event called when the user clicks on a ROI.
+        """        
+
+        # Get the selected reader
+        selected_edf_file_index = self._edf_files_list.currentIndex()
+        edf_files_list_model = self._edf_files_list.model()
+        reader = edf_files_list_model.data(selected_edf_file_index, role = EDFFilesListModel.Reader)
+
+        # Get the selected ROI
+        model = self._rois_list.model()
+        if model is None:
+            return
+
+        roi_name = model.data(index, role = QtCore.Qt.DisplayRole)
+        roi = model.data(index, role = ROISListModel.SelectedROI)
+
+        # Case where there is no more ROI in the list
+        if roi == QtCore.QVariant():
+            return
+
+        lower_corner = roi.lower_corner
+        upper_corner = roi.upper_corner
+
+        self._plot_widget.show_interval(lower_corner[0],
+                                        lower_corner[1],
+                                        upper_corner[0] - lower_corner[0],
+                                        upper_corner[1] - lower_corner[1],
+                                        'green')
+        
+        # Replace the current intervals list model by a new one
+        intervals_list_model = IntervalsListModel(reader.valid_intervals[roi_name], reader.dt, self)
+        self._intervals_list.setModel(intervals_list_model)
+
+        # Create a signal/slot connexion for row changed event
+        self._intervals_list.selectionModel().currentChanged.connect(self.on_select_interval)
 
     def on_set_parameters(self, parameters):
         """Set the search parameters for the current edf file.

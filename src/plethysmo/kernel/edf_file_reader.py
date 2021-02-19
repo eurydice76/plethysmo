@@ -1,9 +1,12 @@
 import collections
+import logging
 import re
 
 import pyedflib as edf
 
 import numpy as np
+
+from plethysmo.kernel.roi import ROI
 
 class EDFFileReaderError(Exception):
     """Error handler for EDFFileReader related exceptions.
@@ -50,13 +53,77 @@ class EDFFileReader:
         self._signal_separation = 15.0
         
         # The list of valid intervals (tuples of of the form (start,end))
-        self._valid_intervals = []
+        self._valid_intervals = collections.OrderedDict()
 
-        # The list of ROIs used to set up the intervals
-        self._rois = []
+        # The ROIs used to set up the intervals
+        self._rois = collections.OrderedDict()
 
         # The time zones for which the data will not be parsed when searching for valid intervals
-        self._excluded_zones = []
+        self._excluded_zones = collections.OrderedDict()
+
+    def add_roi(self, name, roi):
+        """Add a new ROI the the ROIs container.
+
+        Args:
+            name (str): the name of the ROI
+            roi (plethysmo.kernel.roi.ROI): the ROI
+        """
+
+        if name in self._rois:
+            logging.info('A ROI with name {} already exists.')
+            return
+
+        if not isinstance(roi, ROI):
+            logging.info('Invalid type for roi argument.')
+            return
+
+        self._rois[name] = roi
+
+        self._valid_intervals[name] = []
+
+    def add_excluded_zone(self, name, roi):
+        """Add a new ROI the excluded zones container.
+
+        Args:
+            name (str): the name of the ROI
+            roi (plethysmo.kernel.roi.ROI): the ROI
+        """
+
+        if name in self._excluded_zones:
+            logging.info('A ROI with name {} already exists.')
+            return
+
+        if not isinstance(roi, ROI):
+            logging.info('Invalid type for roi argument.')
+            return
+
+        self._excluded_zones[name] = roi
+
+    def delete_excluded_zone(self, name):
+        """Delete a ROI from the excluded zones container.
+
+        Args:
+            name (str): the ROI name
+        """
+
+        if name not in self._excluded_zones:
+            return
+
+        del self._excluded_zones[name]
+
+    def delete_roi(self, name):
+        """Delete a ROI from the ROIs container.
+
+        Args:
+            name (str): the ROI name
+        """
+
+        if name not in self._rois:
+            return
+
+        del self._rois[name]
+
+        del self._valid_intervals[name]
 
     @property
     def dt(self):
@@ -66,7 +133,7 @@ class EDFFileReader:
         return self._dt
 
     @property
-    def edf_filename(self):
+    def filename(self):
         """Getter for _edf_filename attribute.
         """
 
@@ -224,10 +291,10 @@ class EDFFileReader:
         """Update the valid intervals.
         """
 
-        intervals = []
-
         # Loop over the ROI ans search for valid intervals inside
-        for roi in self._rois:
+        for name, roi in self._rois.items():
+
+            self._valid_intervals[name] = []
 
             start_roi, threshold_min = roi.lower_corner
             # The roi unit is converted from time to index
@@ -258,14 +325,14 @@ class EDFFileReader:
                             end = comp1
                             # Case where the signal is over the signal duration parameter: the interval is closed and kept
                             if (end - start)*self._dt > self._signal_duration:
-                                intervals.append((start,end))
+                                self._valid_intervals[name].append((start,end))
                             break
                         # Case where the signal is between the thresholds: checked that its length is over the signal duration parameter
                         else:
                             # If this is the case, the interval is closed and kept
                             if (comp1 - start)*self._dt > self._signal_duration:
                                 end = comp1
-                                intervals.append((start,end))
+                                self._valid_intervals[name].append((start,end))
                                 break
 
                         comp1 += 1
@@ -273,54 +340,53 @@ class EDFFileReader:
                 else:
                     comp += 1
 
-        # Loop over the interval found so far and check that none of them fall within an excluded zone. If this is the case, the interval is not kept.
-        valid_intervals = []
-        for start, end in intervals:
-            excluded_interval = False
-            for roi in self._excluded_zones:
+        # Loop over the intervals found so far and check that none of them fall within an excluded zone. If this is the case, the interval is not kept.
+        for name, intervals in self._valid_intervals.items():
+            valid_intervals = []
+            for start, end in intervals:
 
-                start_roi, _ = roi.lower_corner
-                # The roi unit is converted from time to index
-                start_roi = int(start_roi/self._dt)
-                start_roi = max(start_roi,0)
+                # Loop over the excluded zones
+                for roi in self._excluded_zones.values():
+                    start_roi, _ = roi.lower_corner
+                    # The roi unit is converted from time to index
+                    start_roi = int(start_roi/self._dt)
+                    start_roi = max(start_roi,0)
 
-                end_roi, _ = roi.upper_corner
-                # The roi unit is converted from time to index
-                end_roi = int(end_roi/self._dt)
-                end_roi = min(end_roi,len(self._signal)-1)
-                
-                if (end >= start_roi and start <= end_roi):
-                    excluded_interval = True
-
-            if excluded_interval:
-                continue
-
-            valid_intervals.append((start,end))
-
-        n_intervals = len(valid_intervals)
-
-        # Loop over the intervals found so far, and keep only those distant from more than the signal separation parameter
-        if n_intervals >= 2:
-
-            comp = 0
-            temp = [valid_intervals[0]]
-            while comp < n_intervals- 1:
-                current_interval = valid_intervals[comp]
-                comp1 = comp + 1
-                while comp1 < n_intervals:
-                    next_interval = valid_intervals[comp1]
-                    duration = (next_interval[0] - current_interval[1])*self._dt
-                    if duration >= self._signal_separation:
-                        temp.append(next_interval)
-                        comp = comp1
+                    end_roi, _ = roi.upper_corner
+                    # The roi unit is converted from time to index
+                    end_roi = int(end_roi/self._dt)
+                    end_roi = min(end_roi,len(self._signal)-1)
+                    
+                    # Check for intersection between the interval and the exluded zone
+                    if (end >= start_roi and start <= end_roi):
                         break
-                    comp1 += 1
-                else:
-                    comp += 1
-            
-            valid_intervals = temp
 
-        self._valid_intervals = valid_intervals
+                else:
+                    valid_intervals.append((start,end))
+
+            n_intervals = len(valid_intervals)
+
+            # Loop over the intervals found so far, and keep only those distant from more than the signal separation parameter
+            if n_intervals >= 2:
+                comp = 0
+                temp = [valid_intervals[0]]
+                while comp < n_intervals- 1:
+                    current_interval = valid_intervals[comp]
+                    comp1 = comp + 1
+                    while comp1 < n_intervals:
+                        next_interval = valid_intervals[comp1]
+                        duration = (next_interval[0] - current_interval[1])*self._dt
+                        if duration >= self._signal_separation:
+                            temp.append(next_interval)
+                            comp = comp1
+                            break
+                        comp1 += 1
+                    else:
+                        comp += 1
+                
+                valid_intervals = temp
+
+            self._valid_intervals[name] = valid_intervals
 
         return self._valid_intervals
 

@@ -2,11 +2,9 @@ class ROI:
     """This class defines a Region Of Interest
     """
 
-    def __init__(self, name, lower_corner, upper_corner):
+    def __init__(self, lower_corner, upper_corner):
         """Constructor
         """
-
-        self._name = name
 
         self._lower_corner = lower_corner
 
@@ -18,13 +16,6 @@ class ROI:
         """
 
         return self._lower_corner
-
-    @property
-    def name(self):
-        """Getter for _name attribute.
-        """
-
-        return self._name
 
     @property
     def upper_corner(self):
