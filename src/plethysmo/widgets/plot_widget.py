@@ -3,7 +3,7 @@ from PyQt5 import QtWidgets
 import matplotlib.ticker as ticker
 import matplotlib.patches as patches
 from pylab import Figure
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT 
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT
 
 
 class PlotWidget(QtWidgets.QWidget):
@@ -62,7 +62,7 @@ class PlotWidget(QtWidgets.QWidget):
 
         # If these if already a plot instance, just update the plot
         if hasattr(self, '_plot'):
-            self._plot.set_data(x,y)
+            self._plot.set_data(x, y)
         else:
             # See here for info https://stackoverflow.com/questions/16742765/matplotlib-2d-line-line-plot-comma-meaning
             self._plot, = self._axes.plot(x, y)
@@ -92,7 +92,7 @@ class PlotWidget(QtWidgets.QWidget):
         if self._patch is not None:
             self._patch.remove()
 
-        self._patch = patches.Rectangle(xy=[x_start,y_start],
+        self._patch = patches.Rectangle(xy=[x_start, y_start],
                                         width=width,
                                         height=height,
                                         linewidth=1,

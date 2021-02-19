@@ -14,8 +14,10 @@ from plethysmo.models.excluded_zones_list_model import ExcludedZonesListModel
 from plethysmo.models.intervals_list_model import IntervalsListModel
 from plethysmo.models.rois_list_model import ROISListModel
 from plethysmo.utils.progress_bar import progress_bar
+from plethysmo.views.deselectable_listview import DeselectableListView
 from plethysmo.widgets.logger_widget import LoggerWidget
 from plethysmo.widgets.plot_widget import PlotWidget
+
 
 class MainWindow(QtWidgets.QMainWindow):
     """This class implements the main window of the plethysmo application.
@@ -29,14 +31,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.init_ui()
 
+        self._patch_holder = None
+
     def build_events(self):
         """Build the signal/slots.
         """
 
-        self._search_valid_intervals_button.clicked.connect(self.on_search_valid_intervals)
+        self._search_valid_intervals_button.clicked.connect(
+            self.on_search_valid_intervals)
         self._intervals_list.doubleClicked.connect(self.on_show_zoomed_data)
-        self._add_roi_button.clicked.connect(lambda : self.on_add_roi(self._rois_list))
-        self._add_excluded_zone_button.clicked.connect(lambda : self.on_add_roi(self._excluded_zones_list))
+        self._add_roi_button.clicked.connect(
+            lambda: self.on_add_roi(self._rois_list))
+        self._add_excluded_zone_button.clicked.connect(
+            lambda: self.on_add_roi(self._excluded_zones_list))
         self._compute_statistics.clicked.connect(self.on_compute_statistics)
 
     def build_layout(self):
@@ -98,7 +105,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         run_menu = menubar.addMenu('&Run')
 
-        parameters_action = QtWidgets.QAction('&Set interval search parameters', self)
+        parameters_action = QtWidgets.QAction(
+            '&Set interval search parameters', self)
         parameters_action.setShortcut('Ctrl+P')
         parameters_action.setStatusTip('Set interval search parameters')
         parameters_action.triggered.connect(self.on_open_parameters_dialog)
@@ -111,22 +119,28 @@ class MainWindow(QtWidgets.QMainWindow):
         self._main_frame = QtWidgets.QFrame(self)
 
         self._edf_files_list = QtWidgets.QListView()
-        self._edf_files_list.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self._edf_files_list.setEditTriggers(
+            QtWidgets.QAbstractItemView.NoEditTriggers)
         edf_files_list_model = EDFFilesListModel(self)
         self._edf_files_list.setModel(edf_files_list_model)
 
-        self._rois_list = QtWidgets.QListView()
+        self._rois_list = DeselectableListView(self)
         self._add_roi_button = QtWidgets.QPushButton('Add ROI')
         self._rois_list.installEventFilter(self)
+        self._rois_list.deselectItem.connect(self.on_deselect_item)
 
-        self._excluded_zones_list = QtWidgets.QListView()
-        self._add_excluded_zone_button = QtWidgets.QPushButton('Add excluded zone')
+        self._excluded_zones_list = DeselectableListView(self)
+        self._add_excluded_zone_button = QtWidgets.QPushButton(
+            'Add excluded zone')
         self._excluded_zones_list.installEventFilter(self)
+        self._excluded_zones_list.deselectItem.connect(self.on_deselect_item)
 
-        self._search_valid_intervals_button = QtWidgets.QPushButton('Search valid intervals')
+        self._search_valid_intervals_button = QtWidgets.QPushButton(
+            'Search valid intervals')
 
-        self._intervals_list = QtWidgets.QListView()
+        self._intervals_list = DeselectableListView(self)
         self._intervals_list.installEventFilter(self)
+        self._intervals_list.deselectItem.connect(self.on_deselect_item)
 
         self._plot_widget = PlotWidget(self)
         self._plot_widget.axes.set_xlabel('Time (s)')
@@ -134,7 +148,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._compute_statistics = QtWidgets.QPushButton('Compute statistics')
 
         self._logger = LoggerWidget(self)
-        self._logger.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        self._logger.setFormatter(logging.Formatter(
+            '%(asctime)s - %(levelname)s - %(message)s'))
         logging.getLogger().addHandler(self._logger)
         logging.getLogger().setLevel(logging.INFO)
 
@@ -145,7 +160,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.statusBar().addPermanentWidget(self._progress_label)
         self.statusBar().addPermanentWidget(self._progress_bar)
 
-        icon_path = os.path.join(plethysmo.__path__[0], "icons", "plethysmo.png")
+        icon_path = os.path.join(
+            plethysmo.__path__[0], "icons", "plethysmo.png")
         self.setWindowIcon(QtGui.QIcon(icon_path))
 
         self.setCentralWidget(self._main_frame)
@@ -171,10 +187,10 @@ class MainWindow(QtWidgets.QMainWindow):
             elif watched == self._intervals_list:
                 current_index = watched.currentIndex()
                 model = watched.model()
-                model.remove_interval(current_index.row())            
+                model.remove_interval(current_index.row())
                 return True
 
-        return super(MainWindow,self).eventFilter(watched,event)
+        return super(MainWindow, self).eventFilter(watched, event)
 
     def init_ui(self):
         """Initializes the ui.
@@ -200,7 +216,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Get the current reader
         current_index = self._edf_files_list.currentIndex()
-        reader = edf_files_model.data(current_index,role=EDFFilesListModel.Reader)
+        reader = edf_files_model.data(
+            current_index, role=EDFFilesListModel.Reader)
 
         # Pops up a dialog for drawing the ROI
         dialog = ROIDialog(reader, self)
@@ -212,7 +229,8 @@ class MainWindow(QtWidgets.QMainWindow):
             model = widget.model()
             if model is not None:
                 model.add_roi(name, new_roi)
-                logging.info('Added ROI {} to {} file'.format(name,reader.filename))
+                logging.info('Added ROI {} to {} file'.format(
+                    name, reader.filename))
 
     def on_compute_statistics(self):
         """Event called when the user clicks on Compute statistics button.
@@ -224,18 +242,32 @@ class MainWindow(QtWidgets.QMainWindow):
             logging.info('No EDF file(s) loaded.')
             return
 
-        all_readers = [edf_files_model.data(edf_files_model.index(i), role=EDFFilesListModel.Reader) for i in range(edf_files_model.rowCount())]
+        all_readers = [edf_files_model.data(edf_files_model.index(
+            i), role=EDFFilesListModel.Reader) for i in range(edf_files_model.rowCount())]
 
         for reader in all_readers:
             reader.compute_statistics()
 
+    def on_deselect_item(self, widget):
+        """Event called when the user unselected a selected item by reclicking on it.
+
+        This is used by the ROI, excluded zone and interval list views.
+
+        Args:
+            widget (plethysmo.views.deselectable_listview.DeselectableListView): the list view whose item was unselected
+        """
+
+        if widget == self._patch_holder:
+            self._plot_widget.clear_patch()
+            self._patch_holder = None
 
     def on_load_data(self):
         """Event called when the user loads data from the main menu.
         """
 
         # Pop up a file browser
-        edf_files = QtWidgets.QFileDialog.getOpenFileNames(self, 'Open EDF file(s)', '', 'EDF Files (*.edf)')[0]
+        edf_files = QtWidgets.QFileDialog.getOpenFileNames(
+            self, 'Open EDF file(s)', '', 'EDF Files (*.edf)')[0]
         if not edf_files:
             return
 
@@ -263,13 +295,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._edf_files_list.setCurrentIndex(edf_files_model.index(0, 0))
 
-        logging.info('Loaded successfully {} files out of {}'.format(n_loaded_files, n_edf_files))
+        logging.info('Loaded successfully {} files out of {}'.format(
+            n_loaded_files, n_edf_files))
 
     def on_quit_application(self):
         """Event called when the application is exited.
         """
 
-        choice = QtWidgets.QMessageBox.question(self, 'Quit', "Do you really want to quit?", QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+        choice = QtWidgets.QMessageBox.question(
+            self, 'Quit', "Do you really want to quit?", QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
         if choice == QtWidgets.QMessageBox.Yes:
             sys.exit()
 
@@ -285,9 +319,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Get the current reader
         current_index = self._edf_files_list.currentIndex()
-        reader = edf_files_model.data(current_index,role=EDFFilesListModel.Reader)
+        reader = edf_files_model.data(
+            current_index, role=EDFFilesListModel.Reader)
 
-        logging.info('Searching intervals for {} filename ...'.format(reader.filename))
+        logging.info(
+            'Searching intervals for {} filename ...'.format(reader.filename))
 
         # Search for valid intervals
         reader.update_valid_intervals()
@@ -307,7 +343,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         edf_files_list_model = self._edf_files_list.model()
 
-        reader = edf_files_list_model.data(index, role = EDFFilesListModel.Reader)
+        reader = edf_files_list_model.data(
+            index, role=EDFFilesListModel.Reader)
 
         # Plot the signal contained in the selected reader
         self._plot_widget.update_plot(reader.times, reader.signal)
@@ -315,14 +352,16 @@ class MainWindow(QtWidgets.QMainWindow):
         # Replace the current ROIs list model by the one from the selected reader.
         rois_list_model = ROISListModel(reader, self)
         self._rois_list.setModel(rois_list_model)
-        rois_list_model.noROI.connect(lambda : self._plot_widget.clear_patch())
+        rois_list_model.noROI.connect(lambda: self._plot_widget.clear_patch())
         self._rois_list.selectionModel().currentChanged.connect(self.on_select_roi)
 
         # Replace the current excluded zones list model by the one from the selected reader.
         excluded_zones_list_model = ExcludedZonesListModel(reader, self)
         self._excluded_zones_list.setModel(excluded_zones_list_model)
-        excluded_zones_list_model.noROI.connect(lambda : self._plot_widget.clear_patch())
-        self._excluded_zones_list.selectionModel().currentChanged.connect(self.on_select_excluded_zone)
+        excluded_zones_list_model.noROI.connect(
+            lambda: self._plot_widget.clear_patch())
+        self._excluded_zones_list.selectionModel(
+        ).currentChanged.connect(self.on_select_excluded_zone)
 
         # Replace the current intervals found with the one from the selected reader and roi
         intervals_list_model = IntervalsListModel([], reader.dt, self)
@@ -339,11 +378,16 @@ class MainWindow(QtWidgets.QMainWindow):
         # Get the selected reader
         selected_edf_file_index = self._edf_files_list.currentIndex()
         edf_files_list_model = self._edf_files_list.model()
-        reader = edf_files_list_model.data(selected_edf_file_index, role = EDFFilesListModel.Reader)
+        reader = edf_files_list_model.data(
+            selected_edf_file_index, role=EDFFilesListModel.Reader)
 
         # Get the selected interval
         intervals_list_model = self._intervals_list.model()
-        interval = intervals_list_model.data(index, role = IntervalsListModel.SelectedInterval)
+        interval = intervals_list_model.data(
+            index, role=IntervalsListModel.SelectedInterval)
+
+        if interval == QtCore.QVariant():
+            return
 
         # Convert the start and end of the interval from index unit to time unit
         start = interval[0]*reader.dt
@@ -353,16 +397,18 @@ class MainWindow(QtWidgets.QMainWindow):
         width = end - start
         self._plot_widget.show_interval(start, -1.0, width, 2.0, 'blue')
 
+        self._patch_holder = self._intervals_list
+
     def on_select_excluded_zone(self, index):
         """Event called when the user clicks on a ROI.
-        """        
+        """
 
         # Get the selected ROI
         model = self._excluded_zones_list.model()
         if model is None:
             return
 
-        roi = model.data(index, role = ROISListModel.SelectedROI)
+        roi = model.data(index, role=ROISListModel.SelectedROI)
 
         # Case where there is no more ROI in the list
         if roi == QtCore.QVariant():
@@ -377,22 +423,25 @@ class MainWindow(QtWidgets.QMainWindow):
                                         upper_corner[1] - lower_corner[1],
                                         'red')
 
+        self._patch_holder = self._excluded_zones_list
+
     def on_select_roi(self, index):
         """Event called when the user clicks on a ROI.
-        """        
+        """
 
         # Get the selected reader
         selected_edf_file_index = self._edf_files_list.currentIndex()
         edf_files_list_model = self._edf_files_list.model()
-        reader = edf_files_list_model.data(selected_edf_file_index, role = EDFFilesListModel.Reader)
+        reader = edf_files_list_model.data(
+            selected_edf_file_index, role=EDFFilesListModel.Reader)
 
         # Get the selected ROI
         model = self._rois_list.model()
         if model is None:
             return
 
-        roi_name = model.data(index, role = QtCore.Qt.DisplayRole)
-        roi = model.data(index, role = ROISListModel.SelectedROI)
+        roi_name = model.data(index, role=QtCore.Qt.DisplayRole)
+        roi = model.data(index, role=ROISListModel.SelectedROI)
 
         # Case where there is no more ROI in the list
         if roi == QtCore.QVariant():
@@ -406,9 +455,12 @@ class MainWindow(QtWidgets.QMainWindow):
                                         upper_corner[0] - lower_corner[0],
                                         upper_corner[1] - lower_corner[1],
                                         'green')
-        
+
+        self._patch_holder = self._rois_list
+
         # Replace the current intervals list model by a new one
-        intervals_list_model = IntervalsListModel(reader.valid_intervals[roi_name], reader.dt, self)
+        intervals_list_model = IntervalsListModel(
+            reader.valid_intervals[roi_name], reader.dt, self)
         self._intervals_list.setModel(intervals_list_model)
 
         # Create a signal/slot connexion for row changed event
@@ -426,7 +478,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         current_index = self._edf_files_list.currentIndex()
 
-        reader = edf_files_model.data(current_index,role=EDFFilesListModel.Reader)
+        reader = edf_files_model.data(
+            current_index, role=EDFFilesListModel.Reader)
 
         reader.parameters = parameters
 
@@ -441,7 +494,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         current_index = self._edf_files_list.currentIndex()
 
-        reader = edf_files_model.data(current_index,role=EDFFilesListModel.Reader)
+        reader = edf_files_model.data(
+            current_index, role=EDFFilesListModel.Reader)
 
         dialog = ParametersDialog(reader.parameters, self)
 
@@ -457,18 +511,21 @@ class MainWindow(QtWidgets.QMainWindow):
         # Get the selected reader
         selected_edf_file_index = self._edf_files_list.currentIndex()
         edf_files_list_model = self._edf_files_list.model()
-        reader = edf_files_list_model.data(selected_edf_file_index, role = EDFFilesListModel.Reader)
+        reader = edf_files_list_model.data(
+            selected_edf_file_index, role=EDFFilesListModel.Reader)
 
         # Get the selected interval
         intervals_list_model = self._intervals_list.model()
-        interval = intervals_list_model.data(index, role = IntervalsListModel.SelectedInterval)
+        interval = intervals_list_model.data(
+            index, role=IntervalsListModel.SelectedInterval)
 
         # The zoomed data
         zoomed_times = reader.times[interval[0]:interval[1]]
-        zoomed_signal = reader.signal[interval[0]:interval[1]]  
+        zoomed_signal = reader.signal[interval[0]:interval[1]]
 
         # Plot the zoomed data
         dialog = PlotDialog(zoomed_times, zoomed_signal, self)
-        dialog.setWindowTitle('Signal at [{},{}] s'.format(zoomed_times[0],zoomed_times[-1]))
+        dialog.setWindowTitle('Signal at [{},{}] s'.format(
+            zoomed_times[0], zoomed_times[-1]))
         dialog.axes.set_xlabel('Time (s)')
         dialog.show()
