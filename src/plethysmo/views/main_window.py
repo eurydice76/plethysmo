@@ -34,8 +34,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._search_valid_intervals_button.clicked.connect(self.on_search_valid_intervals)
         self._intervals_list.doubleClicked.connect(self.on_show_zoomed_data)
-        self._add_roi_button.clicked.connect(self.on_add_roi)
-        self._add_excluded_zone_button.clicked.connect(self.on_add_excluded_zone)
+        self._add_roi_button.clicked.connect(lambda : self.on_add_roi(self._rois_list))
+        self._add_excluded_zone_button.clicked.connect(lambda : self.on_add_excluded_zone(self._excluded_zones_list))
 
     def build_layout(self):
         """Build the layout.
@@ -176,49 +176,30 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.build_events()
 
-    def on_add_roi(self):
+    def on_add_roi(self, widget):
         """Pops up a dialog for drawing a ROI which will serve for setting up a zone of interest for intervals search.
         """
 
+        # Check that some EDF files have been loaded
         edf_files_model = self._edf_files_list.model()
-
         if edf_files_model.rowCount() == 0:
             logging.info('No EDF file(s) loaded.')
             return
 
+        # Get the current reader
         current_index = self._edf_files_list.currentIndex()
-
         reader = edf_files_model.data(current_index,role=EDFFilesListModel.Reader)
 
+        # Pops up a dialog for drawing the ROI
         dialog = ROIDialog(reader, self)
 
+        # The ROI is accepted
         if dialog.exec_():
+            # Fetch the ROI from the dialog instance and add to the ROI list model
             new_roi = dialog.roi
-            rois_list_model = self._rois_list.model()
-            if rois_list_model is not None:
-                rois_list_model.add_roi(new_roi)
-
-    def on_add_excluded_zone(self):
-        """Pops up a dialog for drawing a ROI which will serve for setting an excluded zone.
-        """
-
-        edf_files_model = self._edf_files_list.model()
-
-        if edf_files_model.rowCount() == 0:
-            logging.info('No EDF file(s) loaded.')
-            return
-
-        current_index = self._edf_files_list.currentIndex()
-
-        reader = edf_files_model.data(current_index,role=EDFFilesListModel.Reader)
-
-        dialog = ROIDialog(reader, self)
-
-        if dialog.exec_():
-            new_roi = dialog.roi
-            excluded_zone_list_model = self._excluded_zones_list.model()
-            if excluded_zone_list_model is not None:
-                excluded_zone_list_model.add_roi(new_roi)
+            model = widget.model()
+            if model is not None:
+                model.add_roi(new_roi)
 
     def on_load_data(self):
         """Event called when the user loads data from the main menu.
@@ -267,22 +248,24 @@ class MainWindow(QtWidgets.QMainWindow):
         """Event triggered when the user clicks on the search valid intervals button.
         """
 
+        # Check that some EDF files have been loaded
         edf_files_model = self._edf_files_list.model()
-
         if edf_files_model.rowCount() == 0:
             logging.info('No EDF file(s) loaded.')
             return
 
+        # Get the current reader
         current_index = self._edf_files_list.currentIndex()
-
         reader = edf_files_model.data(current_index,role=EDFFilesListModel.Reader)
 
+        # Search for valid intervals
         valid_intervals = reader.update_valid_intervals()
 
+        # Replace the current intervals list model by a new one
         intervals_list_model = IntervalsListModel(valid_intervals, reader.dt, self)
-
         self._intervals_list.setModel(intervals_list_model)
 
+        # Create a signal/slot connexion for row changed event
         self._intervals_list.selectionModel().currentChanged.connect(self.on_select_interval)
 
     def on_select_edf_file(self, index):
@@ -308,13 +291,13 @@ class MainWindow(QtWidgets.QMainWindow):
         rois_list_model = ROISListModel(reader.rois, self)
         self._rois_list.setModel(rois_list_model)
         rois_list_model.no_roi.connect(lambda : self._plot_widget.clear_patch())
-        self._rois_list.selectionModel().currentChanged.connect(self.on_select_roi)
+        self._rois_list.selectionModel().currentChanged.connect(lambda index : self.on_select_roi(self._rois_list,index,'green'))
 
         # Replace the current excluded zones list model by the one from the selected reader.
         excluded_zones_list_model = ROISListModel(reader.excluded_zones, self)
         self._excluded_zones_list.setModel(excluded_zones_list_model)
         excluded_zones_list_model.no_roi.connect(lambda : self._plot_widget.clear_patch())
-        self._excluded_zones_list.selectionModel().currentChanged.connect(self.on_select_excluded_zone)
+        self._excluded_zones_list.selectionModel().currentChanged.connect(lambda index : self.on_select_roi(self._excluded_zones_list,index,'red'))
 
     def on_select_interval(self, index):
         """Event fired when an interval is selected.
@@ -332,24 +315,24 @@ class MainWindow(QtWidgets.QMainWindow):
         intervals_list_model = self._intervals_list.model()
         interval = intervals_list_model.data(index, role = IntervalsListModel.SelectedInterval)
 
+        # Convert the start and end of the interval from index unit to time unit
         start = interval[0]*reader.dt
-
         end = interval[1]*reader.dt
 
+        # Show the interval
         width = end - start
-
         self._plot_widget.show_interval(start, -1.0, width, 2.0, 'blue')
 
-    def on_select_excluded_zone(self, index):
+    def on_select_roi(self, widget, index, color):
         """Event called when the user clicks on a ROI.
         """        
 
         # Get the selected ROI
-        excluded_zone_list_model = self._excluded_zones_list.model()
-        if excluded_zone_list_model is None:
+        model = widget.model()
+        if model is None:
             return
 
-        roi = excluded_zone_list_model.data(index, role = ROISListModel.SelectedROI)
+        roi = model.data(index, role = ROISListModel.SelectedROI)
 
         # Case where there is no more ROI in the list
         if roi == QtCore.QVariant():
@@ -362,31 +345,7 @@ class MainWindow(QtWidgets.QMainWindow):
                                         lower_corner[1],
                                         upper_corner[0] - lower_corner[0],
                                         upper_corner[1] - lower_corner[1],
-                                        'red')
-
-    def on_select_roi(self, index):
-        """Event called when the user clicks on a ROI.
-        """        
-
-        # Get the selected ROI
-        rois_list_model = self._rois_list.model()
-        if rois_list_model is None:
-            return
-
-        roi = rois_list_model.data(index, role = ROISListModel.SelectedROI)
-
-        # Case where there is no more ROI in the list
-        if roi == QtCore.QVariant():
-            return
-
-        lower_corner = roi.lower_corner
-        upper_corner = roi.upper_corner
-
-        self._plot_widget.show_interval(lower_corner[0],
-                                        lower_corner[1],
-                                        upper_corner[0] - lower_corner[0],
-                                        upper_corner[1] - lower_corner[1],
-                                        'green')
+                                        color)
 
     def on_set_parameters(self, parameters):
         """Set the search parameters for the current edf file.
