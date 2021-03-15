@@ -1,3 +1,7 @@
 matplotlib
 pyEDFlib
 PyQt5
+scipy
+pandas
+openpyxl
+xlwt
