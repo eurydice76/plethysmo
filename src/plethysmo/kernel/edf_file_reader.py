@@ -4,9 +4,14 @@ import re
 
 import pyedflib as edf
 
+import pandas as pd
+
 import numpy as np
 
+from scipy.signal import find_peaks
+
 from plethysmo.kernel.roi import ROI
+from plethysmo.utils.signal import current_volume, expiratory_time, inspiratory_time, period
 
 class EDFFileReaderError(Exception):
     """Error handler for EDFFileReader related exceptions.
@@ -35,12 +40,12 @@ class EDFFileReader:
         self._signal = self._edf_file.readSignal(0)
 
         # Autoscale the signal such as its limits become [-1,1]
-        mini = self._signal.min()
-        maxi = self._signal.max()
-        self._signal -= mini
-        self._signal /= (maxi-mini)
-        self._signal -= 0.5
-        self._signal *= 2.0
+        # mini = self._signal.min()
+        # maxi = self._signal.max()
+        # self._signal -= mini
+        # self._signal /= (maxi-mini)
+        # self._signal -= 0.5
+        # self._signal *= 2.0
 
         # Rebuild the time axis from the period
         n_points = len(self._signal)
@@ -51,6 +56,9 @@ class EDFFileReader:
 
         # The separation between two valid intervals (in seconds)
         self._signal_separation = 15.0
+
+        # The signal prominence used to detect peaks
+        self._signal_prominence = 0.5
         
         # The list of valid intervals (tuples of of the form (start,end))
         self._valid_intervals = collections.OrderedDict()
@@ -105,35 +113,49 @@ class EDFFileReader:
 
         statistics = collections.OrderedDict()
 
-        for name, intervals in self._valid_intervals.items():
+        for i, (name, intervals) in enumerate(self._valid_intervals.items()):
 
-            for start,end in intervals:
+            times = ['{:.0f}:{:.0f}'.format(start*self._dt,end*self._dt) for start, end in intervals]
+            statistics[name] = pd.DataFrame(np.nan,
+                                            index=times,
+                                            columns=['pef','pif','amplitude','period','volume courant','temps inspiratoire','temps expiratoire'])
+
+            for j, (start,end) in enumerate(intervals):
 
                 # Compute the integral
                 windowed_interval = self._signal[start:end]
 
-                # Remove the baseline from the windowed interval
-                spectrum = np.fft.fft(windowed_interval)
-                spectrum[0] = 0
-                windowed_interval = np.fft.ifft(spectrum).real
+                # Compute the pef 
+                peak_indexes, _ = find_peaks(windowed_interval, prominence=self._signal_prominence)
+                pef = np.average(windowed_interval[peak_indexes]) if peak_indexes.size else np.nan
+                statistics[name].iloc[j,0] = pef
+                
+                peak_indexes, _ = find_peaks(-windowed_interval, prominence=self._signal_prominence)
+                pif = np.average(windowed_interval[peak_indexes]) if peak_indexes.size else np.nan
+                statistics[name].iloc[j,1] = pif
 
-                integral = np.sum(windowed_interval*self._dt)
+                # The amplitude is computed as the difference between the pef and the pif
+                statistics[name].iloc[j,2] = pef - pif
 
-                # Compute the period using maximum of autocorrelation
-                # See here for info https://stackoverflow.com/questions/59265603/how-to-find-period-of-signal-autocorrelation-vs-fast-fourier-transform-vs-power
-                acf = np.correlate(windowed_interval, windowed_interval, 'full')[-len(windowed_interval):]
-                 # Find the second-order differences
-                inflection = np.diff(np.sign(np.diff(acf)))
-                # Find where they are negative --> maximum
-                peaks = (inflection < 0).nonzero()[0] + 1
-                if peaks.size == 0:
-                    period = np.nan
-                else:
-                    # Convert from index to time unit
-                    period = peaks[acf[peaks].argmax()]*self._dt
+                # Compute the period of the signal
+                per = period(windowed_interval, self._dt)
+                statistics[name].iloc[j,3] = per
 
+                # Compute the current volume as the minimum of the integrals of the negative parts of the signal
+                cv = current_volume(windowed_interval, self._dt)
+                statistics[name].iloc[j,4] = cv
 
+                # Compute the inspiratory time as the average of the time intervals where the signal is negative
+                insp_time = inspiratory_time(windowed_interval,self._dt)
+                statistics[name].iloc[j,5] = insp_time
 
+                # Compute the expiratory time as the average of the time intervals where the signal is positive
+                exp_time = expiratory_time(windowed_interval,self._dt)
+                statistics[name].iloc[j,6] = exp_time
+
+            statistics[name] = statistics[name].round(3)
+
+        return statistics
 
     def delete_excluded_zone(self, name):
         """Delete a ROI from the excluded zones container.
@@ -244,6 +266,7 @@ class EDFFileReader:
         params = collections.OrderedDict()
         params['signal duration'] = self._signal_duration
         params['signal separation'] = self._signal_separation
+        params['signal prominence'] = self._signal_prominence
 
         return params
 
@@ -258,6 +281,7 @@ class EDFFileReader:
         try:
             self._signal_duration = float(params.get('signal duration',5))
             self._signal_separation = float(params.get('signal separation',15))
+            self._signal_prominence = float(params.get('signal prominence',0.5))
         except ValueError as e:
             raise EDFFileReaderError from e
 
