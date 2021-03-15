@@ -94,7 +94,7 @@ class ROISListModel(QtCore.QAbstractListModel):
 
         if self.rowCount() == 0:
 
-            self.noRoi.emit()
+            self.noROI.emit()
 
     def rowCount(self, parent=None):
         """Returns the number of row of the model.
