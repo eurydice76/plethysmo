@@ -27,7 +27,7 @@ class PlotDialog(QtWidgets.QDialog):
         self._main_layout.addWidget(self._canvas)
         self._main_layout.addWidget(self._toolbar)
 
-        self.setGeometry(0, 0, 500, 500)
+        self.setGeometry(0, 0, 800, 800)
 
         self.setLayout(self._main_layout)
 

@@ -43,7 +43,7 @@ class ROIDialog(QtWidgets.QDialog):
 
         self._main_layout.addWidget(self._button_box)
 
-        self.setGeometry(0, 0, 400, 400)
+        self.setGeometry(0, 0, 600, 600)
 
         self.setLayout(self._main_layout)
 
