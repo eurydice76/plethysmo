@@ -10,8 +10,10 @@ import numpy as np
 
 from scipy.signal import find_peaks
 
+from plethysmo.kernel.parameters import PARAMETERS
 from plethysmo.kernel.roi import ROI
-from plethysmo.utils.signal import current_volume, expiratory_time, inspiratory_time, period
+from plethysmo.utils.signal import current_volume, expiratory_time, inspiratory_time, period_frequency
+
 
 class EDFFileReaderError(Exception):
     """Error handler for EDFFileReader related exceptions.
@@ -50,15 +52,6 @@ class EDFFileReader:
         # Rebuild the time axis from the period
         n_points = len(self._signal)
         self._times = np.arange(0,n_points*self._dt,self._dt)
-
-        # The minimum duration for a valid interval (in seconds)
-        self._signal_duration = 5.0
-
-        # The separation between two valid intervals (in seconds)
-        self._signal_separation = 15.0
-
-        # The signal prominence used to detect peaks
-        self._signal_prominence = 0.5
         
         # The list of valid intervals (tuples of of the form (start,end))
         self._valid_intervals = collections.OrderedDict()
@@ -113,47 +106,67 @@ class EDFFileReader:
 
         statistics = collections.OrderedDict()
 
-        for i, (name, intervals) in enumerate(self._valid_intervals.items()):
+        for i, (roi, intervals) in enumerate(self._valid_intervals.items()):
 
             times = ['{:.0f}:{:.0f}'.format(start*self._dt,end*self._dt) for start, end in intervals]
-            statistics[name] = pd.DataFrame(np.nan,
-                                            index=times,
-                                            columns=['pef','pif','amplitude','period','volume courant','temps inspiratoire','temps expiratoire'])
+
+            valid_times = []
+
+            data = []
 
             for j, (start,end) in enumerate(intervals):
+
+                row = []
 
                 # Compute the integral
                 windowed_interval = self._signal[start:end]
 
-                # Compute the pef 
-                peak_indexes, _ = find_peaks(windowed_interval, prominence=self._signal_prominence)
-                pef = np.average(windowed_interval[peak_indexes]) if peak_indexes.size else np.nan
-                statistics[name].iloc[j,0] = pef
-                
-                peak_indexes, _ = find_peaks(-windowed_interval, prominence=self._signal_prominence)
-                pif = np.average(windowed_interval[peak_indexes]) if peak_indexes.size else np.nan
-                statistics[name].iloc[j,1] = pif
-
-                # The amplitude is computed as the difference between the pef and the pif
-                statistics[name].iloc[j,2] = pef - pif
-
                 # Compute the period of the signal
-                per = period(windowed_interval, self._dt)
-                statistics[name].iloc[j,3] = per
+                period, frequency = period_frequency(windowed_interval, self._dt)
 
-                # Compute the current volume as the minimum of the integrals of the negative parts of the signal
-                cv = current_volume(windowed_interval, self._dt)
-                statistics[name].iloc[j,4] = cv
+                # Skip the entry for which the frequency is over a given threshold
+                if frequency > PARAMETERS['frequency threshold']:
+                    continue
+
+                row.append(period)
+                row.append(frequency)
 
                 # Compute the inspiratory time as the average of the time intervals where the signal is negative
                 insp_time = inspiratory_time(windowed_interval,self._dt)
-                statistics[name].iloc[j,5] = insp_time
+                row.append(insp_time)
 
                 # Compute the expiratory time as the average of the time intervals where the signal is positive
                 exp_time = expiratory_time(windowed_interval,self._dt)
-                statistics[name].iloc[j,6] = exp_time
+                row.append(exp_time)
 
-            statistics[name] = statistics[name].round(3)
+                # Compute the current volume as the minimum of the integrals of the negative parts of the signal
+                cv = current_volume(windowed_interval, self._dt)
+                row.append(cv)
+
+                # Compute the volume minute which is defined as the product between the volume courand and the frequency (in min^-1)
+                volmin = cv*frequency
+                row.append(volmin)
+
+                # Compute the pif 
+                peak_indexes, _ = find_peaks(-windowed_interval, prominence=PARAMETERS['signal prominence'])
+                pif = np.average(windowed_interval[peak_indexes]) if peak_indexes.size else np.nan
+                row.append(pif)
+
+                # Compute the pef 
+                peak_indexes, _ = find_peaks(windowed_interval, prominence=PARAMETERS['signal prominence'])
+                pef = np.average(windowed_interval[peak_indexes]) if peak_indexes.size else np.nan
+                row.append(pef)
+                
+                # The amplitude is computed as the difference between the pef and the pif
+                row.append(pef - pif)
+
+                valid_times.append(times[j])
+
+                data.append(row)
+
+            statistics[roi] = pd.DataFrame(data,index=valid_times,columns = ['period','frequence','temps inspiratoire','temps expiratoire','volume courant','volume minute','pif','pef','amplitude'])
+
+            statistics[roi] = statistics[roi].round(3)
 
         return statistics
 
@@ -255,36 +268,6 @@ class EDFFileReader:
 
         return '\n'.join([": ".join([k,v]) for k,v in header.items()])
 
-    @property
-    def parameters(self):
-        """Return the parameters for searching for valid intervals.
-
-        Return:
-            dict: the parameters
-        """
-
-        params = collections.OrderedDict()
-        params['signal duration'] = self._signal_duration
-        params['signal separation'] = self._signal_separation
-        params['signal prominence'] = self._signal_prominence
-
-        return params
-
-    @parameters.setter
-    def parameters(self, params):
-        """Set the parameters for searching for valid intervals.
-
-        Args:
-            params (dict): the parameters
-        """
-
-        try:
-            self._signal_duration = float(params.get('signal duration',5))
-            self._signal_separation = float(params.get('signal separation',15))
-            self._signal_prominence = float(params.get('signal prominence',0.5))
-        except ValueError as e:
-            raise EDFFileReaderError from e
-
     def reset_valid_intervals(self):
         """Reset the list of valid intervals.
         """
@@ -304,34 +287,6 @@ class EDFFileReader:
         """
 
         return self._signal
-
-    @property
-    def signal_duration(self):
-        """Getter for _signal_duration attribute.
-        """
-
-        return self._signal_duration
-
-    @signal_duration.setter
-    def signal_duration(self, signal_duration):
-        """Getter for _signal_duration attribute.
-        """
-
-        self._signal_duration = signal_duration
-
-    @property
-    def signal_separation(self):
-        """Getter for _signal_separation attribute.
-        """
-
-        return self._signal_separation
-
-    @signal_separation.setter
-    def signal_separation(self, signal_separation):
-        """Getter for _signal_separation attribute.
-        """
-
-        self._signal_separation = signal_separation
 
     @property
     def spectrum(self):
@@ -384,13 +339,13 @@ class EDFFileReader:
                         if s1 < threshold_min or s1 > threshold_max:
                             end = comp1
                             # Case where the signal is over the signal duration parameter: the interval is closed and kept
-                            if (end - start)*self._dt > self._signal_duration:
+                            if (end - start)*self._dt > PARAMETERS['signal duration']:
                                 self._valid_intervals[name].append((start,end))
                             break
                         # Case where the signal is between the thresholds: checked that its length is over the signal duration parameter
                         else:
                             # If this is the case, the interval is closed and kept
-                            if (comp1 - start)*self._dt > self._signal_duration:
+                            if (comp1 - start)*self._dt > PARAMETERS['signal duration']:
                                 end = comp1
                                 self._valid_intervals[name].append((start,end))
                                 break
@@ -436,7 +391,7 @@ class EDFFileReader:
                     while comp1 < n_intervals:
                         next_interval = valid_intervals[comp1]
                         duration = (next_interval[0] - current_interval[1])*self._dt
-                        if duration >= self._signal_separation:
+                        if duration >= PARAMETERS['signal separation']:
                             temp.append(next_interval)
                             comp = comp1
                             break

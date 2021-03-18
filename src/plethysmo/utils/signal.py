@@ -2,7 +2,7 @@ import numpy as np
 
 from scipy.signal import find_peaks
 
-def period(signal, dt):
+def period_frequency(signal, dt):
 
     # Compute the period using maximum of autocorrelation
     # See here for info https://stackoverflow.com/questions/59265603/how-to-find-period-of-signal-autocorrelation-vs-fast-fourier-transform-vs-power
@@ -17,7 +17,12 @@ def period(signal, dt):
         # Convert from index to time unit
         period = peaks[acf[peaks].argmax()]*dt
 
-    return period
+    frequency = 1.0/period
+
+    # The frequency is converted in minute^-1
+    frequency *= 60.0
+
+    return (period, frequency)
 
 def current_volume(signal, dt):
 
@@ -62,7 +67,11 @@ def expiratory_time(signal, dt):
                 comp1 += 1
         comp += 1
 
+    # The expiratory time is computed as the average of the interval length where the signal is positive
     time = np.average([(end - start)*dt for start,end in positive_intervals])
+
+    # The expiratory time is converted in ms
+    time *= 1.0e3
 
     return time
 
@@ -84,6 +93,10 @@ def inspiratory_time(signal, dt):
                 comp1 += 1
         comp += 1
 
+    # The inspiratory time is computed as the average of the interval length where the signal is negative
     time = np.average([(end - start)*dt for start,end in negative_intervals])
+
+    # The inspiratory time is converted in ms
+    time *= 1.0e3
 
     return time

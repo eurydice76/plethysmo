@@ -41,7 +41,6 @@ class MainWindow(QtWidgets.QMainWindow):
         """Build the signal/slots.
         """
 
-        self._edf_files_list.doubleClicked.connect(self.on_open_parameters_dialog)
         self._search_valid_intervals_button.clicked.connect(self.on_search_valid_intervals)
         self._intervals_list.doubleClicked.connect(self.on_show_zoomed_data)
         self._add_roi_button.clicked.connect(lambda: self.on_add_roi(self._rois_list))
@@ -96,6 +95,14 @@ class MainWindow(QtWidgets.QMainWindow):
         file_action.setStatusTip('Open EDF files')
         file_action.triggered.connect(self.on_load_data)
         file_menu.addAction(file_action)
+
+        file_menu.addSeparator()
+
+        parameters_action = QtWidgets.QAction('&Parameters', self)
+        parameters_action.setShortcut('Ctrl+P')
+        parameters_action.setStatusTip('Open parameters dialog')
+        parameters_action.triggered.connect(self.on_open_parameters_dialog)
+        file_menu.addAction(parameters_action)
 
         file_menu.addSeparator()
 
@@ -156,7 +163,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.setCentralWidget(self._main_frame)
 
-        self.setGeometry(0, 0, 1200, 1100)
+        self.setGeometry(0, 0, 1200, 800)
 
         self.setWindowTitle("plethysmo {}".format(__version__))
 
@@ -308,6 +315,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
         logging.info('Loaded successfully {} files out of {}'.format(
             n_loaded_files, n_edf_files))
+
+    def on_open_parameters_dialog(self):
+        """Event called when the user open the parameters dialog.
+        """
+
+        dialog = ParametersDialog(self)
+
+        dialog.settings_accepted.connect(self.on_set_parameters)
+
+        # The dialog should not be modal
+        dialog.show()
 
     def on_quit_application(self):
         """Event called when the application is exited.
@@ -500,27 +518,6 @@ class MainWindow(QtWidgets.QMainWindow):
             current_index, role=EDFFilesListModel.Reader)
 
         reader.parameters = parameters
-
-    def on_open_parameters_dialog(self):
-        """Event called when the user open the parameters dialog.
-        """
-
-        edf_files_model = self._edf_files_list.model()
-        if edf_files_model.rowCount() == 0:
-            logging.info('No EDF file(s) loaded.')
-            return
-
-        current_index = self._edf_files_list.currentIndex()
-
-        reader = edf_files_model.data(
-            current_index, role=EDFFilesListModel.Reader)
-
-        dialog = ParametersDialog(reader.parameters, self)
-
-        dialog.settings_accepted.connect(self.on_set_parameters)
-
-        # The dialog should not be modal
-        dialog.show()
 
     def on_show_zoomed_data(self, index):
         """Pops a dialog with the zoomed data for a selected interval.
