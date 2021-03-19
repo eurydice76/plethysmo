@@ -1,3 +1,5 @@
+import time
+
 from PyQt5 import QtCore
 
 class IntervalsListModelError(Exception):
@@ -42,7 +44,9 @@ class IntervalsListModel(QtCore.QAbstractListModel):
         selected_interval = self._intervals[row]
 
         if role == QtCore.Qt.DisplayRole:
-            return '{:.0f}:{:.0f}'.format(selected_interval[0]*self._dt,selected_interval[1]*self._dt)
+            t_start = time.strftime('%H:%M:%S',time.gmtime(selected_interval[0]*self._dt))
+            t_end = time.strftime('%H:%M:%S',time.gmtime(selected_interval[1]*self._dt))
+            return '{} --- {}'.format(t_start,t_end)
 
         elif role == QtCore.Qt.ToolTipRole:
             return '{:d}:{:d}'.format(selected_interval[0],selected_interval[1])

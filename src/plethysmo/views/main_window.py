@@ -13,6 +13,7 @@ from plethysmo.dialogs.parameters_dialog import ParametersDialog
 from plethysmo.dialogs.plot_dialog import PlotDialog
 from plethysmo.dialogs.statistics_dialog import StatisticsDialog
 from plethysmo.dialogs.roi_dialog import ROIDialog
+from plethysmo.kernel.parameters import PARAMETERS
 from plethysmo.models.edf_files_list_model import EDFFilesListModel, EDFFilesListModelError
 from plethysmo.models.excluded_zones_list_model import ExcludedZonesListModel
 from plethysmo.models.intervals_list_model import IntervalsListModel
@@ -322,8 +323,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         dialog = ParametersDialog(self)
 
-        dialog.settings_accepted.connect(self.on_set_parameters)
-
         # The dialog should not be modal
         dialog.show()
 
@@ -378,6 +377,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         reader = edf_files_list_model.data(
             index, role=EDFFilesListModel.Reader)
+
+        if reader == QtCore.QVariant():
+            return
 
         # Plot the signal contained in the selected reader
         self._plot_widget.update_plot(reader.times, reader.signal)
@@ -502,23 +504,6 @@ class MainWindow(QtWidgets.QMainWindow):
         # Create a signal/slot connexion for row changed event
         self._intervals_list.selectionModel().currentChanged.connect(self.on_select_interval)
 
-    def on_set_parameters(self, parameters):
-        """Set the search parameters for the current edf file.
-        """
-
-        edf_files_model = self._edf_files_list.model()
-
-        if edf_files_model.rowCount() == 0:
-            logging.info('No EDF file(s) loaded.')
-            return
-
-        current_index = self._edf_files_list.currentIndex()
-
-        reader = edf_files_model.data(
-            current_index, role=EDFFilesListModel.Reader)
-
-        reader.parameters = parameters
-
     def on_show_zoomed_data(self, index):
         """Pops a dialog with the zoomed data for a selected interval.
         """
@@ -544,7 +529,12 @@ class MainWindow(QtWidgets.QMainWindow):
             zoomed_times[0], zoomed_times[-1]))
         dialog.axes.set_xlabel('Time (s)')
 
-        peaks, _ = find_peaks(zoomed_signal, prominence=reader.parameters['signal prominence'])
+        peaks, _ = find_peaks(zoomed_signal, prominence=PARAMETERS['signal prominence'])
+        peaks = [p for p in peaks if zoomed_signal[p] > 0]
         dialog.axes.plot(zoomed_times[peaks],zoomed_signal[peaks],"or")
+
+        peaks, _ = find_peaks(-zoomed_signal, prominence=PARAMETERS['signal prominence'])
+        peaks = [p for p in peaks if zoomed_signal[p] < 0]
+        dialog.axes.plot(zoomed_times[peaks],zoomed_signal[peaks],"ob")
 
         dialog.show()

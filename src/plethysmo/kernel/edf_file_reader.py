@@ -1,6 +1,7 @@
 import collections
 import logging
 import re
+import time
 
 import pyedflib as edf
 
@@ -106,9 +107,13 @@ class EDFFileReader:
 
         statistics = collections.OrderedDict()
 
-        for i, (roi, intervals) in enumerate(self._valid_intervals.items()):
+        for roi, intervals in self._valid_intervals.items():
 
-            times = ['{:.0f}:{:.0f}'.format(start*self._dt,end*self._dt) for start, end in intervals]
+            times = []
+            for start, end in intervals:
+                t_start = time.strftime('%H:%M:%S',time.gmtime(start*self._dt))
+                t_end = time.strftime('%H:%M:%S',time.gmtime(end*self._dt))
+                times.append('{} --- {}'.format(t_start,t_end))
 
             valid_times = []
 
@@ -149,12 +154,12 @@ class EDFFileReader:
 
                 # Compute the pif 
                 peak_indexes, _ = find_peaks(-windowed_interval, prominence=PARAMETERS['signal prominence'])
-                pif = np.average(windowed_interval[peak_indexes]) if peak_indexes.size else np.nan
+                pif = np.average([v for v in windowed_interval[peak_indexes] if v < 0.0]) if peak_indexes.size else np.nan
                 row.append(pif)
 
                 # Compute the pef 
                 peak_indexes, _ = find_peaks(windowed_interval, prominence=PARAMETERS['signal prominence'])
-                pef = np.average(windowed_interval[peak_indexes]) if peak_indexes.size else np.nan
+                pef = np.average([v for v in windowed_interval[peak_indexes] if v > 0.0]) if peak_indexes.size else np.nan
                 row.append(pef)
                 
                 # The amplitude is computed as the difference between the pef and the pif
